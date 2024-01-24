@@ -263,7 +263,8 @@ def chunkTextFile(inputFileName, sentenacesPerChunk):
 
 
 
-async def main(inputFileName, outputFileName):
+async def main(inputFileName, outputFileName, address):
+    lmStudioAddress = "http://" + address + "/v1/chat/completions"
     promptCharacterFinder = """[INST]name all of the people you see in passages i send you, please. send them to me as a numbered list.
                 If you don't see the names of any people, respond with NAK.  If you understand, respond only with OK.[/INST]"""
     
@@ -285,9 +286,9 @@ async def main(inputFileName, outputFileName):
     print("preprocessing text data")
     chunks = chunkTextFile(inputFileName, 2) #reduced chunk size to 2 sentences.  testing indicates this could improve reliability of the character finder
     print("creating LM sessions")
-    characterFinderSession = LMStudioSession("http://192.168.50.81:1234/v1/chat/completions", promptCharacterFinder)
-    nameValidatorSession = LMStudioSession("http://192.168.50.81:1234/v1/chat/completions", promptNameChecker)
-    characterAppearanceSession = LMStudioSession("http://192.168.50.81:1234/v1/chat/completions", promptCharacterAppearance)
+    characterFinderSession = LMStudioSession(lmStudioAddress, promptCharacterFinder)
+    nameValidatorSession = LMStudioSession(lmStudioAddress, promptNameChecker)
+    characterAppearanceSession = LMStudioSession(lmStudioAddress, promptCharacterAppearance)
     print("running character finder")
     characterData = await characterFinder(chunks, characterFinderSession, nameValidatorSession)
     print("running description creator")
@@ -307,8 +308,9 @@ async def main(inputFileName, outputFileName):
 if(__name__ == '__main__'):
     inputFileName = sys.argv[1]
     outputFileName = sys.argv[2]
+    machineAddress = sys.argv[3]
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(inputFileName, outputFileName))
+    loop.run_until_complete(main(inputFileName, outputFileName, machineAddress))
     
 
 
