@@ -6,33 +6,22 @@ import re
 import functools
 
 
-
-async def sendMessageHelper(address, payload):
-        output = requests.post(address, json = payload)
-        return(output)
-
-
-
 def generateSystemPromptLine(prompt):
     output = {"role": "system", "content": prompt}
     return(output)
 
 
 
-def decodeMessageContent(data):
-    output = data['choices'][0]['message']['content']
-    return(output)
-
-
-
 class LMStudioSession:
-    def __init__(self, address, systemPrompt, config = ""):
+    def __init__(self, address, systemPrompt, timeout = 10, config = ""):
         self.address = address
         self.systemPrompt = systemPrompt
         self.chatHistory = []
         self.waitingForResponse = False
         self.messages = [generateSystemPromptLine(systemPrompt)]
         self.messageHandle = "empty"
+        self.timeout = timeout
+        self.config = {}
 
         if(config != ""):
             self.config = config
@@ -57,7 +46,7 @@ class LMStudioSession:
         message = {"role": "user", "content": message}
         self.messages.append(message)
         payload['messages'] = self.messages
-        self.messageHandle = asyncio.create_task(sendMessageHelper(self.address, payload))
+        self.messageHandle = asyncio.create_task(self.sendMessageHelper(payload))
     
 
     def isWaitingForResponse(self):
@@ -80,6 +69,17 @@ class LMStudioSession:
             output = "no output"
 
         return(output)
+    
+
+    async def sendMessageHelper(self, payload):
+        output = requests.post(self.address, json = payload, timeout = self.timeout)
+        return(output)
+    
+
+    def decodeMessageContent(self, data):
+        output = data['choices'][0]['message']['content']
+        return(output)
+
 
 
 
@@ -103,7 +103,7 @@ async def characterFinder(inputPassages, characterFinderInstance: LMStudioSessio
             characterFinderInstance.sendMessage(chunk)
             data = await characterFinderInstance.receiveMessage()
             characterFinderInstance.clearMessageHistory()
-            characterData = decodeMessageContent(data)
+            characterData = characterFinderInstance.decodeMessageContent(data)
             print("raw response from character finder: " + characterData)
             characterBuffer = characterData.split('\n') #divide into multiple lines
             characterBuffer = list(filter(lambda x: None != (re.search('[0-9]+\.', x)), characterBuffer)) #only keep the lines that have a #. on them 
@@ -118,7 +118,7 @@ async def characterFinder(inputPassages, characterFinderInstance: LMStudioSessio
             nameValidatorInstance.sendMessage(name)
             data = await nameValidatorInstance.receiveMessage()
             nameValidatorInstance.clearMessageHistory()
-            choice = decodeMessageContent(data).lower()
+            choice = nameValidatorInstance.decodeMessageContent(data).lower()
             print("processed identifier response: " + choice)
             if("yes" in choice):
                 characterList.append(name)
@@ -163,7 +163,7 @@ async def determineCharacterAppearances(characterPassages, appearanceInstance: L
             appearanceInstance.sendMessage(appearanceData)
             data = await appearanceInstance.receiveMessage()
             appearanceInstance.clearMessageHistory()
-            appearanceTemp = decodeMessageContent(data)
+            appearanceTemp = appearanceInstance.decodeMessageContent(data)
 
         output[character]['appearance'] = appearanceTemp
 
@@ -263,8 +263,8 @@ def chunkTextFile(inputFileName, sentenacesPerChunk):
 
 
 
-async def main(inputFileName, outputFileName, address):
-    lmStudioAddress = "http://" + address + "/v1/chat/completions"
+async def main(inputFileName, outputFileName, address, timeouts):
+    lmStudioAddress = "http://" + address + ":1234/v1/chat/completions"
     promptCharacterFinder = """[INST]name all of the people you see in passages i send you, please. send them to me as a numbered list.
                 If you don't see the names of any people, respond with NAK.  If you understand, respond only with OK.[/INST]"""
     
@@ -286,9 +286,9 @@ async def main(inputFileName, outputFileName, address):
     print("preprocessing text data")
     chunks = chunkTextFile(inputFileName, 2) #reduced chunk size to 2 sentences.  testing indicates this could improve reliability of the character finder
     print("creating LM sessions")
-    characterFinderSession = LMStudioSession(lmStudioAddress, promptCharacterFinder)
-    nameValidatorSession = LMStudioSession(lmStudioAddress, promptNameChecker)
-    characterAppearanceSession = LMStudioSession(lmStudioAddress, promptCharacterAppearance)
+    characterFinderSession = LMStudioSession(lmStudioAddress, promptCharacterFinder, timeout = timeouts)
+    nameValidatorSession = LMStudioSession(lmStudioAddress, promptNameChecker, timeout = timeouts)
+    characterAppearanceSession = LMStudioSession(lmStudioAddress, promptCharacterAppearance, timeout = timeouts)
     print("running character finder")
     characterData = await characterFinder(chunks, characterFinderSession, nameValidatorSession)
     print("running description creator")
@@ -310,7 +310,7 @@ if(__name__ == '__main__'):
     outputFileName = sys.argv[2]
     machineAddress = sys.argv[3]
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(inputFileName, outputFileName, machineAddress))
+    loop.run_until_complete(main(inputFileName, outputFileName, machineAddress, 30))
     
 
 
