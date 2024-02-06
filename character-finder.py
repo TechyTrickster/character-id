@@ -46,6 +46,7 @@ class LMStudioSession:
         message = {"role": "user", "content": message}
         self.messages.append(message)
         payload['messages'] = self.messages
+        print(payload)
         self.messageHandle = asyncio.create_task(self.sendMessageHelper(payload))
     
 
@@ -102,31 +103,38 @@ async def characterFinder(inputPassages, characterFinderInstance: LMStudioSessio
             print("looping for good character ID")
             characterFinderInstance.sendMessage(chunk)
             data = await characterFinderInstance.receiveMessage()
+            print(data)
             characterFinderInstance.clearMessageHistory()
             characterData = characterFinderInstance.decodeMessageContent(data)
             print("raw response from character finder: " + characterData)
             characterBuffer = characterData.split('\n') #divide into multiple lines
             characterBuffer = list(filter(lambda x: None != (re.search('[0-9]+\.', x)), characterBuffer)) #only keep the lines that have a #. on them 
             characterBuffer = list(map(lambda x: x.lower(), characterBuffer)) #move everything to lower case for simplicity and matching purposes
+            characterBuffer = list(map(lambda x: re.sub('[0-9]+\.', '', x), characterBuffer)) #remove the numbering
+            characterBuffer = list(map(lambda x: re.sub('\(.*\)', '', x).strip(), characterBuffer)) #remove any of the parenthesis and the stuff between them and trim
             print("filtered response from character finder: " + str(characterBuffer))
             goodResponseDetected = not ((len(characterBuffer) == 0) and (not ("NAK" in characterData)))
+            if(goodResponseDetected):
+                characterList.extend(characterBuffer)
 
         print("left character finder loop")
         print("analyzing character finder names for actual names.")
-        for name in characterBuffer: #check if the character name really is a character name, drop anything that isn't
-            print("name being analyzed: " + name)
-            nameValidatorInstance.sendMessage(name)
-            data = await nameValidatorInstance.receiveMessage()
-            nameValidatorInstance.clearMessageHistory()
-            choice = nameValidatorInstance.decodeMessageContent(data).lower()
-            print("processed identifier response: " + choice)
-            if("yes" in choice):
-                characterList.append(name)
+        # for name in characterBuffer: #check if the character name really is a character name, drop anything that isn't
+        #     print("name being analyzed: " + name)
+        #     nameValidatorInstance.sendMessage(name)
+        #     data = await nameValidatorInstance.receiveMessage()
+        #     nameValidatorInstance.clearMessageHistory()
+        #     choice = nameValidatorInstance.decodeMessageContent(data).lower()
+        #     print("processed identifier response: " + choice)
+        #     if("yes" in choice):
+        #         characterList.append(name)
 
         #do an n^2 loop to remove similar duplicates? like Count Dracula and Dracula?
-            
+        
+
+        characterList = list(set(characterList))
         buffer = {'index': index, 'text': chunk, 'character list': characterList}
-        output['characters'].update(set(characterList))
+        output['characters'].update(characterList)
         output['tagged passages'].append(buffer)
         print("saved data")
         print(buffer)
@@ -150,15 +158,16 @@ async def determineCharacterAppearances(characterPassages, appearanceInstance: L
             'appearance': ""
         }
         #generate list of passages tagged with character name
-        passages = list(filter(lambda x: x['character list'] == character, characterPassages['tagged passages']))
+        passages = list(filter(lambda x: character in x['character list'], characterPassages['tagged passages']))
         output[character]['direct passages'] = passages
         #collect all of the passages surrounding each mention of a given character throughout the entire text
         #also, iteratively generate a description of the mentioned character based on the accumulated description plus 
         #new passages
         for passage in passages:
+            print(passage)
             relatedPassages = collectSurroundingPassages(characterPassages, passage, 2, 3)
             output[character]['related passages'].append(relatedPassages)
-            passageAreaText = list(functools.reduce(lambda x, y: x + "\n" + y['text'], relatedPassages, ""))
+            passageAreaText = functools.reduce(lambda x, y: x + "\n" + y['text'], relatedPassages, "")
             appearanceData = "character name: " + character + "\ncurrent info\n" + appearanceTemp + "\nnew passages\n" + passageAreaText
             appearanceInstance.sendMessage(appearanceData)
             data = await appearanceInstance.receiveMessage()
@@ -185,7 +194,7 @@ def collectSurroundingPassages(dataSet, targetPassage, before, after):
     highHigherBound = min(index + (after + 1), len(dataSet['tagged passages']))
     previousSections = dataSet['tagged passages'][lowerBound:index]
     nextSections = dataSet['tagged passages'][lowHigherBound:highHigherBound]
-    output = output.extend(previousSections)
+    output.extend(previousSections)
     output.append(targetPassage)
     output.extend(nextSections)
     return(output)
@@ -265,23 +274,11 @@ def chunkTextFile(inputFileName, sentenacesPerChunk):
 
 async def main(inputFileName, outputFileName, address, timeouts):
     lmStudioAddress = "http://" + address + ":1234/v1/chat/completions"
-    promptCharacterFinder = """[INST]name all of the people you see in passages i send you, please. send them to me as a numbered list.
-                If you don't see the names of any people, respond with NAK.  If you understand, respond only with OK.[/INST]"""
+    promptCharacterFinder = """name all of the people you see in the passages i send you, please. send them to me as a numbered list.  If you don't see the names of any people, respond with NAK."""
     
-    promptCharacterAppearance = """Given the name of a person, and a passage that they appear in, write a description of that person's appearance. 
-                Format your response as a numbered list. Keep your descriptions simple and short. If you understand, respond only with OK.  Here 
-                is an example;
-                character name: Jane Doe
-                passage: The young duo of Marvin and Jane made their way through the old house, slowly.  Due to her height, she frequently bumped her head on the low door ways.  Marvin, for once,
-                was grateful for his shorter stature.  As they made their way into the dirty, damp basement, they found an old passage way, cut into the brick foundation of the 
-                house.  It looked sturdy enough, but it was very narrow.  This time, it was Jane who was grateful.  Her slender figure allowed her to pass easily through the 
-                narrow hallway, while Marvin was cursing his larger stomach, which was making it difficult to shimmy through.  Once on the other side, Jane's once long firey red hair 
-                and Marvin's black hair was now brown and grey due to all of the dust and cobwebs.  
-
-                output:
-                young, tall, and slender, firey red hair."""
+    promptCharacterAppearance = """Given the name of a person, and a passage that they appear in, write a description of that person's appearance.  Format your response as a numbered list. Keep your descriptions simple and short. """
     
-    promptNameChecker = """[INST]Tell me if the next message sent is the name of a person.  Repsond only with YES or NO.[/INST]"""
+    promptNameChecker = """Tell me if the message sent contains the name of a person.  Repsond only with YES or NO."""
     
     print("preprocessing text data")
     chunks = chunkTextFile(inputFileName, 2) #reduced chunk size to 2 sentences.  testing indicates this could improve reliability of the character finder
@@ -310,7 +307,7 @@ if(__name__ == '__main__'):
     outputFileName = sys.argv[2]
     machineAddress = sys.argv[3]
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(inputFileName, outputFileName, machineAddress, 30))
+    loop.run_until_complete(main(inputFileName, outputFileName, machineAddress, 180))
     
 
 
