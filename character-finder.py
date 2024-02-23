@@ -8,12 +8,6 @@ from LMStudioSession import LMStudioSession
 
 
 
-def generateSystemPromptLine(prompt):
-    output = {"role": "system", "content": prompt}
-    return(output)
-
-
-
 async def characterFinder(inputPassages, characterFinderInstance: LMStudioSession, nameValidatorInstance: LMStudioSession):
     output = {
         'characters': set([]),

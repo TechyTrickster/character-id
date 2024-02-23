@@ -1,3 +1,5 @@
+import requests
+
 class LMStudioSession:
     def __init__(self, address, systemPrompt, timeout = 10, config = ""):
         self.address = address
@@ -17,6 +19,11 @@ class LMStudioSession:
                 "max_tokens": -1,
                 "stream": False
             }
+    
+
+    def generateSystemPromptLine(self, prompt):
+        output = {"role": "system", "content": prompt}
+        return(output)
     
     
     def clearMessageHistory(self):
