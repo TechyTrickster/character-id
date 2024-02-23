@@ -1,4 +1,7 @@
 import requests
+import asyncio
+
+
 
 class LMStudioSession:
     def __init__(self, address, systemPrompt, timeout = 10, config = ""):
@@ -6,7 +9,7 @@ class LMStudioSession:
         self.systemPrompt = systemPrompt
         self.chatHistory = []
         self.waitingForResponse = False
-        self.messages = [generateSystemPromptLine(systemPrompt)]
+        self.messages = [self.generateSystemPromptLine(systemPrompt)]
         self.messageHandle = "empty"
         self.timeout = timeout
         self.config = {}
@@ -28,7 +31,7 @@ class LMStudioSession:
     
     def clearMessageHistory(self):
         self.messages = []
-        prompt = generateSystemPromptLine(self.systemPrompt)
+        prompt = self.generateSystemPromptLine(self.systemPrompt)
         self.messages.append(prompt)
 
 
